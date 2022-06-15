@@ -1,0 +1,14 @@
+This is shaping up well: I think that it should be an interesting and compelling
+project.  Some questions:
+
+0) what is TNP?  Does it only include taxis?  Is there any other ride-sharing included?
+
+1) can you please start to work to access Census/ACS data for Chicago?  This will help me assess whether you can answer your quite interesting questions.  Adding some small excerpts and codebooks would be ideal.
+
+2) can you map from addresses to census tract?
+
+3) can you identify some "natural experiments" that would allow you to infer some associations?
+
+4) Are there other datasets available from Chicago that you could overlay?
+
+5) Do you have other questions for me?

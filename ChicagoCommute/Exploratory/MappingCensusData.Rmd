@@ -1,0 +1,130 @@
+  ---
+title: "Mapping Census Data"
+author: "Enoch Shin and Felix Stetsenko"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message=FALSE,
+  warning=FALSE,
+  cache=TRUE)
+library(ggmap)
+library(tigris)
+library(gpclib)
+library(maptools)
+library(tidyverse)
+library(magrittr)
+gpclibPermit()
+# devtools::install_github("GL-Li/ggtiger")
+library(ggtiger)
+library(viridis)
+library(beepr)
+library(leaflet)
+library(sp)
+library(beepr)
+```
+
+# Purpose
+
+> After we've ingested the tract-level census data and queried the Valentine's Day data, we'll do some preliminary analyses to explore plotting on Leaflet.
+
+# Read in Valentine's Day Data
+
+```{r}
+valday <- readRDS("ChicagoCommute/RDA/valday.Rda")
+valday %<>% mutate_at(c("pickup_centroid_latitude", "pickup_centroid_longitude"), as.numeric)
+names(valday)
+```
+
+
+# Read in Census Data
+
+```{r}
+race <- readRDS("ChicagoCommute/RDA/raceByTract.Rda")
+income <- readRDS("ChicagoCommute/RDA/incomeByTract.Rda")
+```
+
+\newpage
+
+# Appendix: Leaflet Practice and Exploration
+
+# Shapefile
+
+> Get the shapefile for Cook County, which is where Chicago is located.
+
+```{r, message=FALSE, results="hide"}
+shapefile <- tigris::tracts(state = "17", county = "031")
+shapefile_race <- geo_join(shapefile, race,"TRACTCE", "tract", how="left")
+# poly <- fortify(shapefile)
+# ggmap(get_map("Chicago, IL", zoom=9, color="bw"), extent="device") +
+  # geom_polygon(aes(x = long, y = lat, group = group), 
+               # data = poly, colour = 'blue',
+               # alpha = .4, size = .3)
+```
+
+
+
+```{r}
+# install.packages("leaflet.providers")
+# load additional tile providers
+library(leaflet.providers)
+
+#make the palette
+palette <- colorNumeric(
+  palette="YlGnBu",
+  domain = shapefile_race$Black.or.African.American
+)
+
+# make base map
+base <- leaflet(leafletOptions(preferCanvas = TRUE)) %>%
+  addProviderTiles(providers$CartoDB.Positron,
+                   options = providerTileOptions(
+  updateWhenZooming = FALSE,      # map won't update tiles until zoom is done
+  updateWhenIdle = TRUE)) %>%
+  addPolygons(data=shapefile_race, color="grey", weight=1); base
+
+# add in black population
+with_black <- base %>%
+  #note: should probably do this based on proportion in tract
+              addPolygons(data=shapefile_race,
+                fillColor=~palette(Black.or.African.American), 
+                stroke=FALSE) %>%
+              addLegend(
+                pal = palette,
+                values = shapefile_race$Black.or.African.American,
+                position = "bottomright",
+                title = "Population of 
+                Black/African American Persons"
+      ); with_black
+
+```
+
+> Sunset in Chicago, IL on Valentine's Day 2019 was at 5:22 PM. Let's filter the data based on that. I'm still having issues with slow rendering, even with making the sample only 1000 points.
+
+```{r}
+library(lubridate)
+sunset <- lubridate::make_datetime(year=2019L, month=2L, day=14L,
+                         hour=17L, min=22L, sec=0, tz=NULL)
+
+daytime <- filter(valday, trip_start_timestamp <= sunset)
+daytime <- daytime[sample(nrow(daytime), size=1000),]
+
+with_rides <- with_black %>%
+                addCircleMarkers(
+                  lng= daytime$pickup_centroid_longitude,
+                  lat = daytime$pickup_centroid_latitude, 
+                  clusterOptions = markerClusterOptions(),
+                  stroke = FALSE,
+                  radius = 1.5
+                  ); with_rides
+```
+
+```{r, echo=FALSE}
+beep(sound=1)
+```
+

@@ -1,0 +1,200 @@
+---
+title: "Querying Census Data"
+author: "Enoch Shin, Felix Stetsenko"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: pdf_document
+toc: true
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(RSocrata)
+library(ggmap)
+library(magrittr)
+library(plotly)
+library(censusapi)
+library(feather)
+library(beepr)
+library(tigris)
+knitr::opts_chunk$set(cache = TRUE,
+                      echo=TRUE)
+```
+
+\newpage
+
+# Purpose
+
+> This file's purpose is to query the census data, particularly the 2017 American Community Survey data using the `censusapi` package in order to get income and race-related variables on a census tract level. 
+
+> Once the data has been queried, we will join it with the shapefiles for Cook County.
+
+# Ingest (Query)
+
+> We looked at the Census Bureau's website (https://www.census.gov/data/developers/data-sets/acs-5year.html) for example API calls for the ACS data.
+
+> To reference the variable names that we want, we referenced the codebook from the Bureau: (https://api.census.gov/data/2017/acs/acs5/variables.html). More examples of data provenance to follow.
+
+### Set API Key for Census Bureau
+
+> You'll have to request a key here: https://api.census.gov/data/key_signup.html.
+
+```{r, eval=FALSE, echo=TRUE}
+Sys.setenv(CENSUS_KEY="XXXXX")
+readRenviron("~/.Renviron")
+Sys.getenv("CENSUS_KEY")
+```
+
+
+### Query available variables and datasets
+
+```{r}
+apis <- listCensusApis()
+# list of all possible API soruces
+apis <- listCensusApis()
+head(apis)
+
+# https://api.census.gov/data/2017/acs/acs5/variables.html
+
+# pull the codebook 
+varii <- getCensus(name = "2017/acs/acs5/variables", vars="*")
+str(varii)
+```
+
+### Find correct variables for race data
+
+> Let's narrow down the available variables in the the ACS 2017 5-year census. The structure of the codebook shows us that we have a variable name, label, and a concept describing that variable. First, we'll search for race-related variables.
+
+```{r}
+# find the possible race-related variables to query 
+racedata <- varii[grep("RACE", varii$label, ignore.case = TRUE), ]
+```
+
+> Sift through the list of matches above to get the desired variable. We wish to get the population of *one* race in each tract. Thus, we know we'll need an estimate of a total population. We'll do another search for this metric: 
+
+```{r}
+# racedata[which(racedata$name=="C02003_016E"),] #test case
+onerace <- grep("Estimate!!Total!!Population of one race!!", racedata$label)
+onerace_data <- racedata[onerace, ]
+head(onerace_data)
+# View(onerace_data)
+```
+
+> We can see that the census describes its population measures like so: "Estimate!!Total!!Population of one race!!Black or African American". Now, let's grab the variable name in the census that corresponds to these values, and also extract the race name from the long ""Estimate!!Total!!Population of one race!!Black or African American" label:
+
+```{r}
+#get census variable name for value
+codes_onerace <- racedata[onerace, 1]
+codes_onerace
+# we want to grab just the race name from the 
+## "Estimate!!Total!!Population of one race!!Black or African American"
+## codes
+everyfourth <- seq(from=4, to=24, by=4)
+
+# split the label into respective parts, delineated by !!
+## grab the fourth element of every split label,
+### which is the race name
+race_decode <- unlist(strsplit(racedata[onerace, 2], "\\!!"))[everyfourth]
+race_decode
+
+#make a key for the census codes and the race names
+racekey <- data.frame(code=codes_onerace, race=as.character(race_decode))
+```
+
+
+### Query race data
+
+> Once we've gotten the census variable names for the race population estimates, pull the data from Cook County on a tract level:
+
+```{r}
+racedf <- getCensus(name = "acs/acs5",
+                    vintage=2017,
+                    vars=c(codes_onerace), 
+                    region = "tract:*",
+                    regionin = "state:17+county:031")
+
+#wrangling/renaming:
+colnames(racedf) <- c("state", "county", "tract",as.character(racekey$race))
+# write_feather(racedf, "ChicagoCommute/feather/raceByTract.feather")
+
+# we want the proportions of race, not counts
+rowsums <- racedf %>%
+          mutate(totalTractPop = rowSums(.[, 4:9], na.rm=TRUE))
+
+racedf_prop <- rowsums %>%
+                mutate_at(4:9, .funs = function(x){x/.$totalTractPop}) %>%
+                mutate_at(vars(4:9), ~replace(., is.na(.), 0))
+
+#write into the ShinyApp directory and the project directory
+write_feather(racedf_prop, "ChicagoCommute/feather/raceByTract_proportion.feather")
+write_feather(racedf_prop, "ChicagoCommute/app/feather/raceByTract_proportion.feather")
+```
+
+
+### Income on Tract Basis
+
+> Now, we're going to do the same thing except for income metrics. To find the right variables, our path was as follows:
+
+> (1) Go to the developer documentation for the ACS 5-year data: https://www.census.gov/data/developers/data-sets/acs-5year.html
+
+> (2) Under 2017, there are several tables available to us. A good overview of the types of tables available are found in the "Examples and Supported Geography" link used under "Detailed Tables" (https://api.census.gov/data/2017/acs/acs5.html).
+
+> (3) For race, we used regular expressions to find the variables. For income, things are a little more complicated. We got somewhat lucky and picked the right table under the "Examples and Supported Geography" list: the table "ACS 5-Year Data Profiles" is what we want. The variable list "https://api.census.gov/data/2017/acs/acs5/profile/variables/" was then manually searched for the right income variables.
+
+```{r}
+income_codes <- c("DP03_0062E", "DP03_0088E", "DP03_0092E", "DP03_0128PE")
+
+colnames <- c("state", "county", "tract", "Median household income", "Per capita income",
+              "Median earnings for workers", "Pct under poverty level")
+
+income_df <- getCensus(name = "acs/acs5/profile",
+                    vintage=2017,
+                    vars= income_codes,
+                    region = "tract:*",
+                    regionin = "state:17+county:031")
+
+colnames(income_df) <- colnames
+
+# saveRDS(income_df, file="ChicagoCommute/RDA/incomeByTract.Rda")
+```
+
+# Final Wrangling and add Shapefiles
+
+> Here, we'll do some wrangling of the census data, and then we'll join the census data with shapefiles and save those so that the app can access them right away.
+
+```{r}
+#recode the income, which had indicator values like -6666666 that 
+##should be changed to 0 
+income <-  income_df %>%
+              mutate_at(c("Median household income",
+                        "Per capita income",
+                        "Median earnings for workers",
+                        "Pct under poverty level"),
+                      function(x){ifelse(x < 0, 0, x)})
+# write into the app's folder
+write_feather(income, path="ChicagoCommute/app/feather/incomeByTract.feather")
+# write into the feather folder
+write_feather(income, path="ChicagoCommute/feather/incomeByTract.feather")
+```
+
+# Make shapefiles with census data
+
+```{r, results="hide"}
+shapefile <- tigris::tracts(state = "17", county = "031")
+
+# shapefile@data$NAME
+
+shapefile_race <- geo_join(shapefile, racedf_prop,"TRACTCE", "tract", how="left")
+shapefile_income <- geo_join(shapefile, income,"TRACTCE", "tract", how="left")
+
+#can't use feather since it can't handle shapefile
+saveRDS(shapefile_race, "ChicagoCommute/app/RDA/shapefile_race.Rda")
+saveRDS(shapefile_income, "ChicagoCommute/app/RDA/shapefile_income.Rda")
+saveRDS(shapefile_race, "ChicagoCommute/RDA/shapefile_race.Rda")
+saveRDS(shapefile_income, "ChicagoCommute/RDA/shapefile_income.Rda")
+```
+
+```{r, echo=FALSE}
+#beep for finished knitting
+beep(sound = 1)
+```
+

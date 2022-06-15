@@ -1,0 +1,42 @@
+---
+title: "City of Chicago Border Shapefile"
+author: "Enoch Shin, Felix Stetsenko"
+date: "12/7/2019"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+library(sf)
+library(sp)
+library(rgdal)
+library(feather)
+library(leaflet)
+```
+
+# Purpose
+
+> In the Shiny application, I realized that we needed to denote the borders of the City of Chicago. Our census data was for the entirety of Cook County, but the Transportation Network Provider data was only for the city. Thus, we needed to denote the city border: this file takes the `.geojson` from the following link and saves it for use in the Shiny app:
+https://data.cityofchicago.org/Facilities-Geographic-Boundaries/Boundaries-City/ewy2-6yfk
+
+
+```{r, results="hide", message=FALSE}
+chicago_bounds <- rgdal::readOGR("ChicagoCommute/dataIngest/chicagoBound.geojson")
+# save to both the app directory and project's directory
+saveRDS(chicago_bounds, "ChicagoCommute/app/RDA/chicagoBound.Rda")
+saveRDS(chicago_bounds, "ChicagoCommute/RDA/chicagoBound.Rda")
+```
+
+> Test the results by plotting it (suppressed when knitting to PDF):
+
+```{r, eval=FALSE}
+#test
+
+leaflet(chicago_bounds) %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  addPolygons(color="red", 
+              weight=1,
+              fillOpacity = 0)
+```
+
