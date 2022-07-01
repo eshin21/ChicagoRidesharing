@@ -5,8 +5,6 @@ Group project repo for Enoch Shin and Felix Stetsenko
 
 [Shinyapps.io App](https://enochshin.shinyapps.io/ChicagoRideshare/)
 
-[R Server App](https://r.amherst.edu/apps/eshin21/ChicagoRideshare/)
-
 
 # Motivation 
 
@@ -25,4 +23,4 @@ Group project repo for Enoch Shin and Felix Stetsenko
 # Navigating the repository
 
   All relevant files for this project are organized under the `ChicagoCommute` directory. See the `FinalReport` file for details about our conclusions and our sources.
-  There are READMEs that detail the steps for each component of the project. See the [app README here](https://github.com/Amherst-Horton/STAT231F19-GroupA/tree/master/ChicagoCommute/app) for technical details about our Shiny application. 
+  There are READMEs that detail the steps for each component of the project. See the [app README here](https://github.com/eshin21/ChicagoRidesharing/blob/master/ChicagoCommute/app/README.md) for technical details about our Shiny application. 
